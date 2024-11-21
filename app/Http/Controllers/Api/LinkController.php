@@ -3,51 +3,38 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\StoreShortLinkRequest;
+use App\Http\Resources\LinkResource;
 use App\Models\Link;
 use App\Models\LinkClick;
+use App\Services\LinkService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
 class LinkController extends Controller
 {
-    public function shorten(Request $request)
+    public function __construct(private LinkService $linkService) {}
+
+    public function shorten(StoreShortLinkRequest $request)
     {
-        $request->validate([
-            'original_url' => 'required|url|max:255',
-        ]);
+        $data = $request->validated();
 
-        $shortCode = Str::random(6);
+        $link = $this->linkService->shorten($data);
 
-        $link = Link::create([
-            'original_url' => $request->original_url,
-            'short_code' => $shortCode,
-            'user_id' => auth()->id(),
-        ]);
-
-        return response()->json([
-            'short_url' => url($link->short_code),
-            'original_url' => $request->original_url
-        ], 201);
+        return new LinkResource($link);
     }
 
     public function userLinks()
     {
-        $links = auth()->user()->links()->with('clicks')->get();
+        $links = $this->linkService->getUserLinks();
 
-        return response()->json($links);
+        return LinkResource::collection($links);
     }
 
     public function redirect($shortCode)
     {
-        $link = Link::where('short_code', $shortCode)->firstOrFail();
+        $originalUrl = $this->linkService->getOriginalUrl($shortCode);
 
-        LinkClick::create([
-            'link_id' => $link->id,
-            'ip' => request()->ip(),
-            'user_agent' => request()->header('User-Agent'),
-            'clicked_at' => now(),
-        ]);
-
-        return redirect($link->original_url);
+        return redirect($originalUrl);
     }
 }
